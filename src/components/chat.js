@@ -1,152 +1,187 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
+import axios from "axios";
 
-const socket = io("https://chat-app-backend-xb3j.onrender.com"); 
+const socket = io("http://localhost:5000");
 
 const Chat = () => {
     const [username, setUsername] = useState("");
-    const [profilePicture, setProfilePicture] = useState(null);
-    const [message, setMessage] = useState("");
+    const [password, setPassword] = useState("");
+    const [token, setToken] = useState("");
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isLogin, setIsLogin] = useState(true);
+    const [users, setUsers] = useState([]);
+    const [selectedUser, setSelectedUser] = useState(null);
     const [messages, setMessages] = useState([]);
-    const [isTyping, setIsTyping] = useState(false);
-    const [isUsernameSet, setIsUsernameSet] = useState(false);
+    const [message, setMessage] = useState("");
+    const socketRef = useRef(socket);
 
-    const handleSetUsername = () => {
-        if (username.trim()) {
-            socket.emit("set_username", { username, profilePicture });
-            setIsUsernameSet(true);
+    useEffect(() => {
+        if (token) {
+            axios
+                .get("http://localhost:5000/users", { headers: { Authorization: `Bearer ${token}` } })
+                .then((res) => setUsers(res.data))
+                .catch(console.error);
         }
-    };
+    }, [token]);
 
-    const handleProfilePictureUpload = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setProfilePicture(reader.result);
-            };
-            reader.readAsDataURL(file);
+    useEffect(() => {
+        if (selectedUser) {
+            axios
+                .get(`http://localhost:5000/chats/${selectedUser.username}`, { headers: { Authorization: `Bearer ${token}` } })
+                .then((res) => setMessages(res.data))
+                .catch(console.error);
+        }
+    }, [selectedUser, token]);
+
+    useEffect(() => {
+        const currentSocket = socketRef.current;
+        currentSocket.on("receive_message", (newMessage) => {
+            setMessages((prev) => [...prev, newMessage]);
+        });
+        return () => {
+            currentSocket.off("receive_message");
+        };
+    }, []);
+
+    useEffect(() => {
+        if (isAuthenticated) {
+            socketRef.current.emit("join_room", username);
+        }
+    }, [isAuthenticated, username]);
+
+    const handleAuth = async () => {
+        const url = isLogin ? "/login" : "/signup";
+        const payload = { username, password };
+        try {
+            const res = await axios.post(`http://localhost:5000${url}`, payload);
+            if (isLogin) {
+                setToken(res.data.token);
+                setIsAuthenticated(true);
+            } else {
+                alert("Signup successful! Please login.");
+            }
+        } catch (err) {
+            alert(err.response?.data || "Authentication failed");
         }
     };
 
     const sendMessage = (e) => {
         e.preventDefault();
-        if (message.trim()) {
-            const timestamp = new Date().toLocaleTimeString();
-            socket.emit("send_message", { username, profilePicture, message, timestamp });
-            setMessage("");
+        if (!message.trim()) {
+            alert("Message cannot be empty!");
+            return;
         }
-    };
 
-    useEffect(() => {
-        socket.on("receive_message", (data) => {
-            setMessages((prev) => [...prev, data]);
-        });
-
-        socket.on("user_typing", (data) => {
-            setIsTyping(data.isTyping && data.username !== username);
-        });
-
-        return () => {
-            socket.off("receive_message");
-            socket.off("user_typing");
+        const timestamp = new Date().toLocaleTimeString();
+        const data = {
+            sender: username,
+            receiver: selectedUser.username,
+            message,
+            timestamp,
         };
-    }, [username]);
 
-    const handleTyping = (e) => {
-        setMessage(e.target.value);
-        socket.emit("user_typing", { username, isTyping: e.target.value.length > 0 });
+        socketRef.current.emit("send_message", data);
+        setMessages((prev) => [...prev, data]);
+        setMessage("");
     };
 
     return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-r from-indigo-600 to-purple-700 p-6">
-            {!isUsernameSet ? (
-                <div className="w-full max-w-md bg-white shadow-lg rounded-xl p-8 space-y-6 transform transition-all duration-300 ease-in-out">
-                    <h2 className="text-center text-2xl font-semibold text-gray-800">Welcome to Chat</h2>
+        <div className="h-screen w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-gray-900 font-sans">
+            {!isAuthenticated ? (
+                <div className="bg-white/10 backdrop-blur-md p-8 rounded-3xl shadow-2xl w-11/12 max-w-md mx-auto transition-all duration-500">
+                    <h2 className="text-3xl font-extrabold mb-6 text-white text-center drop-shadow">
+                        {isLogin ? "Welcome Back 👋" : "Create Account 🚀"}
+                    </h2>
                     <input
                         type="text"
+                        placeholder="Username"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Enter your username"
-                        className="w-full p-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        className="w-full p-3 mb-4 rounded-xl bg-white/20 text-white placeholder-white outline-none focus:ring-2 focus:ring-white transition"
                     />
-                    <div className="flex justify-center items-center">
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleProfilePictureUpload}
-                            className="mt-4 bg-gray-100 p-2 rounded-lg cursor-pointer"
-                        />
-                    </div>
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full p-3 mb-4 rounded-xl bg-white/20 text-white placeholder-white outline-none focus:ring-2 focus:ring-white transition"
+                    />
                     <button
-                        onClick={handleSetUsername}
-                        className="w-full py-3 mt-6 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all"
+                        onClick={handleAuth}
+                        className="w-full bg-white text-indigo-600 font-bold py-3 rounded-xl hover:scale-105 transition duration-300"
                     >
-                        Set Username
+                        {isLogin ? "Login" : "Signup"}
                     </button>
+                    <p
+                        className="text-center mt-4 text-white underline cursor-pointer hover:text-indigo-100 transition"
+                        onClick={() => setIsLogin(!isLogin)}
+                    >
+                        {isLogin ? "Don't have an account? Signup" : "Already have an account? Login"}
+                    </p>
                 </div>
             ) : (
-                <div className="w-full max-w-lg bg-white shadow-xl rounded-xl p-6 space-y-6">
-                    <div className="h-96 overflow-y-auto border-b-2 border-gray-200 mb-4 space-y-6 p-4">
-                        {messages.map((msg, index) => (
+                <div className="flex w-full h-full max-h-screen overflow-hidden">
+                    {/* Sidebar */}
+                    <div className="w-full md:w-1/4 bg-gray-900 text-white p-4 overflow-y-auto">
+                        <h3 className="text-xl font-bold mb-4">📋 Chat Users</h3>
+                        {users.map((user) => (
                             <div
-                                key={index}
-                                className={`flex items-start space-x-3 ${
-                                    msg.username === username ? "justify-end" : "justify-start"
+                                key={user.username}
+                                onClick={() => setSelectedUser(user)}
+                                className={`p-3 rounded-xl mb-2 cursor-pointer transition-all ${
+                                    selectedUser?.username === user.username
+                                        ? "bg-indigo-600"
+                                        : "hover:bg-gray-800"
                                 }`}
                             >
-                                {/* Profile picture on the left for other users, on the right for self */}
-                                {msg.username !== username && msg.profilePicture && (
-                                    <img
-                                        src={msg.profilePicture}
-                                        alt="Profile"
-                                        className="w-12 h-12 rounded-full border-2 border-indigo-500"
-                                    />
-                                )}
-                                <div
-                                    className={`max-w-xs p-4 rounded-2xl ${
-                                        msg.username === username
-                                            ? "bg-indigo-600 text-white text-right shadow-md"
-                                            : "bg-gray-200 text-gray-800 text-left shadow-md"
-                                    }`}
-                                >
-                                    <div className="text-sm text-gray-500 font-medium">
-                                        {msg.username === username ? "You" : msg.username}
-                                    </div>
-                                    <div className="mt-2 text-lg font-semibold">
-                                        {msg.message}
-                                    </div>
-                                    <div className="mt-1 text-xs text-gray-400">{msg.timestamp}</div>
-                                </div>
-                                {/* Profile picture on the right for self */}
-                                {msg.username === username && msg.profilePicture && (
-                                    <img
-                                        src={msg.profilePicture}
-                                        alt="Profile"
-                                        className="w-12 h-12 rounded-full border-2 border-indigo-500"
-                                    />
-                                )}
+                                {user.username}
                             </div>
                         ))}
                     </div>
-                    {isTyping && (
-                        <div className="text-sm text-indigo-400 italic">User is typing...</div>
-                    )}
-                    <form onSubmit={sendMessage} className="flex items-center space-x-4">
-                        <input
-                            type="text"
-                            value={message}
-                            onChange={handleTyping}
-                            placeholder="Type a message"
-                            className="flex-1 p-4 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                        <button
-                            type="submit"
-                            className="bg-indigo-600 text-white py-3 px-6 rounded-full hover:bg-indigo-700 transition-all"
-                        >
-                            Send
-                        </button>
-                    </form>
+
+                    {/* Chat Area */}
+                    <div className="flex-1 bg-white p-6 flex flex-col">
+                        {selectedUser ? (
+                            <>
+                                <div className="flex-1 overflow-y-auto mb-4 space-y-3">
+                                    {messages.map((msg, i) => (
+                                        <div
+                                            key={i}
+                                            className={`max-w-sm p-3 rounded-xl shadow-md transition transform ${
+                                                msg.sender === username
+                                                    ? "ml-auto bg-indigo-500 text-white animate-fadeInRight"
+                                                    : "mr-auto bg-gray-200 text-black animate-fadeInLeft"
+                                            }`}
+                                        >
+                                            <p className="font-semibold">{msg.sender}</p>
+                                            <p>{msg.message}</p>
+                                            <span className="text-xs block mt-1 opacity-70">{msg.timestamp}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <form onSubmit={sendMessage} className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={message}
+                                        onChange={(e) => setMessage(e.target.value)}
+                                        placeholder="Type a message..."
+                                        className="flex-1 border border-gray-300 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition"
+                                    />
+                                    <button
+                                        type="submit"
+                                        className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition duration-300"
+                                    >
+                                        Send
+                                    </button>
+                                </form>
+                            </>
+                        ) : (
+                            <div className="text-center text-gray-400 mt-20 text-xl font-medium">
+                                👈 Select a user to start chatting!
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -157,248 +192,202 @@ export default Chat;
 
 
 
-
-/*import React, { useState, useEffect } from "react";
+/*import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
+import axios from "axios";
 
-const socket = io("http://localhost:5000"); // Replace with your backend URL
+const socket = io("http://localhost:5000");
 
 const Chat = () => {
     const [username, setUsername] = useState("");
-    const [profilePicture, setProfilePicture] = useState(null);
+    const [password, setPassword] = useState("");
+    const [token, setToken] = useState("");
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isLogin, setIsLogin] = useState(true);
+    const [users, setUsers] = useState([]);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [messages, setMessages] = useState([]);
     const [message, setMessage] = useState("");
-    const [messages, setMessages] = useState([]);
-    const [isTyping, setIsTyping] = useState(false);
-    const [isUsernameSet, setIsUsernameSet] = useState(false);
+    const socketRef = useRef(socket);
 
-    const handleSetUsername = () => {
-        if (username.trim()) {
-            socket.emit("set_username", { username, profilePicture });
-            setIsUsernameSet(true);
-        }
-    };
-
-    const handleProfilePictureUpload = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setProfilePicture(reader.result);
-            };
-            reader.readAsDataURL(file);
-        }
-    };
-
-    const sendMessage = (e) => {
-        e.preventDefault();
-        if (message.trim()) {
-            const timestamp = new Date().toLocaleTimeString();
-            socket.emit("send_message", { username, profilePicture, message, timestamp });
-            setMessage("");
-        }
-    };
-
+    // Fetch users after authentication
     useEffect(() => {
-        socket.on("receive_message", (data) => {
-            setMessages((prev) => [...prev, data]);
-        });
+        if (token) {
+            axios
+                .get("http://localhost:5000/users", { headers: { Authorization: `Bearer ${token}` } })
+                .then((res) => setUsers(res.data))
+                .catch(console.error);
+        }
+    }, [token]);
 
-        socket.on("user_typing", (data) => {
-            setIsTyping(data.isTyping && data.username !== username);
+    // Fetch messages for selected user
+    useEffect(() => {
+        if (selectedUser) {
+            axios
+                .get(`http://localhost:5000/chats/${selectedUser.username}`, { headers: { Authorization: `Bearer ${token}` } })
+                .then((res) => setMessages(res.data))
+                .catch(console.error);
+        }
+    }, [selectedUser, token]);
+
+    // Set up socket listener
+    useEffect(() => {
+        const currentSocket = socketRef.current;
+
+        currentSocket.on("receive_message", (newMessage) => {
+            setMessages((prev) => [...prev, newMessage]);
         });
 
         return () => {
-            socket.off("receive_message");
-            socket.off("user_typing");
-        };
-    }, [username]);
-
-    const handleTyping = (e) => {
-        setMessage(e.target.value);
-        socket.emit("user_typing", { username, isTyping: e.target.value.length > 0 });
-    };
-
-    return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-            {!isUsernameSet ? (
-                <div className="w-full max-w-md bg-white shadow-lg rounded-lg p-4">
-                    <input
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Enter your username"
-                        className="w-full p-2 border rounded-lg focus:outline-none"
-                    />
-                    <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProfilePictureUpload}
-                        className="mt-4"
-                    />
-                    <button
-                        onClick={handleSetUsername}
-                        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-                    >
-                        Set Username
-                    </button>
-                </div>
-            ) : (
-                <div className="w-full max-w-md bg-white shadow-lg rounded-lg p-4">
-                    <div className="h-80 overflow-y-auto border-b border-gray-200 mb-4">
-                        {messages.map((msg, index) => (
-                            <div
-                                key={index}
-                                className={`flex items-center my-2 ${
-                                    msg.username === username ? "justify-end" : "justify-start"
-                                }`}
-                            >
-                                {msg.username !== username && msg.profilePicture && (
-                                    <img
-                                        src={msg.profilePicture}
-                                        alt="Profile"
-                                        className="w-8 h-8 rounded-full mr-2"
-                                    />
-                                )}
-                                <div
-                                    className={`px-3 py-2 rounded-lg ${
-                                        msg.username === username
-                                            ? "bg-blue-100 text-right ml-auto"
-                                            : "bg-gray-100 text-left mr-auto"
-                                    }`}
-                                >
-                                    <div className="text-sm text-gray-500">
-                                        {msg.username === username ? "You" : msg.username}
-                                    </div>
-                                    <div className="text-gray-800">{msg.message}</div>
-                                    <div className="text-xs text-gray-400 mt-1">{msg.timestamp}</div>
-                                </div>
-                                {msg.username === username && msg.profilePicture && (
-                                    <img
-                                        src={msg.profilePicture}
-                                        alt="Profile"
-                                        className="w-8 h-8 rounded-full ml-2"
-                                    />
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                    {isTyping && <div className="text-sm text-gray-500 mb-2">User is typing...</div>}
-                    <form onSubmit={sendMessage} className="flex">
-                        <input
-                            type="text"
-                            value={message}
-                            onChange={handleTyping}
-                            placeholder="Type a message"
-                            className="flex-1 p-2 border rounded-l-lg focus:outline-none"
-                        />
-                        <button
-                            type="submit"
-                            className="bg-blue-500 text-white px-4 rounded-r-lg hover:bg-blue-600"
-                        >
-                            Send
-                        </button>
-                    </form>
-                </div>
-            )}
-        </div>
-    );
-};
-
-export default Chat;*/
-
-
-
-
-
-/*import React, { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
-
-const socket = io('http://localhost:5000'); // Backend URL
-
-const Chat = () => {
-    const [username, setUsername] = useState('');
-    const [message, setMessage] = useState('');
-    const [messages, setMessages] = useState([]);
-    const [isUsernameSet, setIsUsernameSet] = useState(false);
-
-
-    const handleSetUsername = () => {
-        if (username.trim()) {
-            socket.emit('set_username', username);
-            setIsUsernameSet(true);
-        }
-    };
-
-    const sendMessage = (e) => {
-        e.preventDefault();
-        if (message.trim()) {
-            socket.emit('send_message', message);
-            setMessage('');
-        }
-    };
-
-    useEffect(() => {
-        socket.on('receive_message', (data) => {
-            setMessages((prev) => [...prev, data]);
-        });
-
-        return () => {
-            socket.off('receive_message');
+            currentSocket.off("receive_message");
         };
     }, []);
 
+    // Join room after successful authentication
+    useEffect(() => {
+        if (isAuthenticated) {
+            socketRef.current.emit("join_room", username);
+        }
+    }, [isAuthenticated, username]);
+
+    const handleAuth = async () => {
+        const url = isLogin ? "/login" : "/signup";
+        const payload = { username, password };
+        try {
+            const res = await axios.post(`http://localhost:5000${url}`, payload);
+            if (isLogin) {
+                setToken(res.data.token);
+                setIsAuthenticated(true);
+            } else {
+                alert("Signup successful! Please login.");
+            }
+        } catch (err) {
+            alert(err.response?.data || "Authentication failed");
+        }
+    };
+
+    const sendMessage = (e) => {
+        e.preventDefault();
+        if (!message.trim()) {
+            alert("Message cannot be empty!");
+            return;
+        }
+
+        const timestamp = new Date().toLocaleTimeString();
+        const data = {
+            sender: username,
+            receiver: selectedUser.username,
+            message,
+            timestamp,
+        };
+
+        // Emit the message to the server
+        socketRef.current.emit("send_message", data);
+
+        // Update local messages
+        setMessages((prev) => [...prev, data]);
+
+        // Clear the input field
+        setMessage("");
+    };
+
     return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gray-100">
-            {!isUsernameSet ? (
-                <div className="w-full max-w-md bg-white shadow-lg rounded-lg p-4">
-                    <input
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="Enter your username"
-                        className="w-full p-2 border rounded-lg focus:outline-none"
-                    />
-                    <button
-                        onClick={handleSetUsername}
-                        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-                    >
-                        Set Username
-                    </button>
+        <div className="h-screen bg-gray-100 flex">
+            {!isAuthenticated ? (
+                <div className="w-full flex justify-center items-center">
+                    <div className="bg-white p-6 rounded shadow-md">
+                        <h2 className="text-xl font-bold mb-4">
+                            {isLogin ? "Login" : "Signup"}
+                        </h2>
+                        <input
+                            type="text"
+                            placeholder="Username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            className="w-full p-2 mb-4 border rounded"
+                        />
+                        <input
+                            type="password"
+                            placeholder="Password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full p-2 mb-4 border rounded"
+                        />
+                        <button
+                            onClick={handleAuth}
+                            className="w-full bg-blue-500 text-white p-2 rounded"
+                        >
+                            {isLogin ? "Login" : "Signup"}
+                        </button>
+                        <p
+                            className="text-center mt-4 text-blue-500 cursor-pointer"
+                            onClick={() => setIsLogin(!isLogin)}
+                        >
+                            {isLogin
+                                ? "Don't have an account? Signup"
+                                : "Already have an account? Login"}
+                        </p>
+                    </div>
                 </div>
             ) : (
-                <div className="w-full max-w-md bg-white shadow-lg rounded-lg p-4">
-                    <div className="h-80 overflow-y-auto border-b border-gray-200 mb-4">
-                        {messages.map((msg, index) => (
+                <div className="flex w-full">
+                    <div className="w-1/4 bg-gray-800 p-4 text-white">
+                        <h3 className="text-lg font-bold">Users</h3>
+                        {users.map((user) => (
                             <div
-                                key={index}
-                                className={`my-2 px-3 py-2 rounded-lg ${
-                                    msg.username === username
-                                        ? 'bg-blue-100 text-right ml-auto'
-                                        : 'bg-gray-100 text-left mr-auto'
+                                key={user.username}
+                                onClick={() => setSelectedUser(user)}
+                                className={`p-3 cursor-pointer rounded ${
+                                    selectedUser?.username === user.username
+                                        ? "bg-gray-700"
+                                        : "hover:bg-gray-700"
                                 }`}
                             >
-                                <div className="text-sm text-gray-500">
-                                    {msg.username === username ? 'You' : msg.username}
-                                </div>
-                                <div className="text-gray-800">{msg.message}</div>
+                                {user.username}
                             </div>
                         ))}
                     </div>
-                    <form onSubmit={sendMessage} className="flex">
-                        <input
-                            type="text"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            placeholder="Type a message"
-                            className="flex-1 p-2 border rounded-l-lg focus:outline-none"
-                        />
-                        <button
-                            type="submit"
-                            className="bg-blue-500 text-white px-4 rounded-r-lg hover:bg-blue-600"
-                        >
-                            Send
-                        </button>
-                    </form>
+                    <div className="w-3/4 p-4 bg-white">
+                        {selectedUser && (
+                            <>
+                                <div className="h-96 overflow-y-auto bg-gray-50 p-4 shadow-inner">
+                                    {messages.map((msg, i) => (
+                                        <div
+                                            key={i}
+                                            className={`p-3 rounded ${
+                                                msg.sender === username
+                                                    ? "bg-blue-500 text-white text-right"
+                                                    : "bg-gray-300 text-black text-left"
+                                            } mb-3`}
+                                        >
+                                            <p>
+                                                <strong>{msg.sender}</strong>:
+                                            </p>
+                                            <p>{msg.message}</p>
+                                            <span className="text-xs">
+                                                {msg.timestamp}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <form onSubmit={sendMessage} className="mt-4 flex">
+                                    <input
+                                        type="text"
+                                        value={message}
+                                        onChange={(e) => setMessage(e.target.value)}
+                                        placeholder="Type a message"
+                                        className="flex-1 p-3 border rounded"
+                                    />
+                                    <button
+                                        type="submit"
+                                        className="bg-blue-500 text-white px-4 py-2 ml-2 rounded"
+                                    >
+                                        Send
+                                    </button>
+                                </form>
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -406,3 +395,10 @@ const Chat = () => {
 };
 
 export default Chat;*/
+
+
+
+
+
+
+
