@@ -54,7 +54,7 @@ const Chat = () => {
         const url = isLogin ? "/login" : "/signup";
         const payload = { username, password };
         try {
-            const res = await axios.post(`http://localhost:5000${url}`, payload);
+            const res = await axios.post(`https://chat-app-backend-production-4d1c.up.railway.app${url}`, payload);
             if (isLogin) {
                 setToken(res.data.token);
                 setIsAuthenticated(true);
