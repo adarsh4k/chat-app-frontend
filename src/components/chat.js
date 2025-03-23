@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
 
-const socket = io("http://localhost:5000");
+const socket = io("https://chat-app-backend-production-4d1c.up.railway.app");
 
 const Chat = () => {
     const [username, setUsername] = useState("");
@@ -18,8 +18,9 @@ const Chat = () => {
 
     useEffect(() => {
         if (token) {
-            axios
-                .get("http://localhost:5000/users", { headers: { Authorization: `Bearer ${token}` } })
+            
+            axios.get("https://chat-app-backend-production-4d1c.up.railway.app/users", { headers: { Authorization: `Bearer ${token}` } })
+
                 .then((res) => setUsers(res.data))
                 .catch(console.error);
         }
@@ -27,8 +28,9 @@ const Chat = () => {
 
     useEffect(() => {
         if (selectedUser) {
-            axios
-                .get(`http://localhost:5000/chats/${selectedUser.username}`, { headers: { Authorization: `Bearer ${token}` } })
+            
+            axios.get(`https://chat-app-backend-production-4d1c.up.railway.app/chats/${selectedUser.username}`, { headers: { Authorization: `Bearer ${token}` } })
+
                 .then((res) => setMessages(res.data))
                 .catch(console.error);
         }
