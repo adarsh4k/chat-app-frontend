@@ -26,7 +26,7 @@ const Chat = () => {
     // Initialize socket connection
     useEffect(() => {
         if (isAuthenticated) {
-            const newSocket = io("http://localhost:5000", {
+            const newSocket = io("https://chat-app-backend-xb3j.onrender.com", {
                 auth: { token },
                 reconnectionAttempts: 5,
                 reconnectionDelay: 1000
@@ -50,7 +50,7 @@ const Chat = () => {
     useEffect(() => {
         if (token) {
             setLoading(prev => ({ ...prev, users: true }));
-            axios.get("http://localhost:5000/users", { 
+            axios.get("https://chat-app-backend-xb3j.onrender.com/users", { 
                 headers: { Authorization: `Bearer ${token}` } 
             })
             .then((res) => setUsers(res.data))
@@ -67,7 +67,7 @@ const Chat = () => {
         if (selectedUser && token) {
             setLoading(prev => ({ ...prev, messages: true }));
             setMessages([]);
-            axios.get(`http://localhost:5000/chats/${selectedUser.username}`, { 
+            axios.get(`https://chat-app-backend-xb3j.onrender.com/chats/${selectedUser.username}`, { 
                 headers: { Authorization: `Bearer ${token}` } 
             })
             .then((res) => {
@@ -141,7 +141,7 @@ const Chat = () => {
         const payload = { username, password };
         
         try {
-            const res = await axios.post(`http://localhost:5000${url}`, payload);
+            const res = await axios.post(`https://chat-app-backend-xb3j.onrender.com${url}`, payload);
             if (isLogin) {
                 setToken(res.data.token);
                 setIsAuthenticated(true);
